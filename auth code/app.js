@@ -1,177 +1,65 @@
-var express = require("express"); // Express web server framework
-const fetch = require("node-fetch"); // "Request" library
-var cors = require("cors");
-var querystring = require("querystring");
-var cookieParser = require("cookie-parser");
-const { response } = require("express");
-const { request } = require("http");
-
-var client_id = "Your client ID"; // Your client id
-var client_secret = "Your client secret"; // Your secret
-var redirect_uri = "http://localhost:3000/"; // Your redirect uri
-const url = "https://api.spotify.com/v1/users/{user_id}/playlists";
-
-/**
- * Generates a random string containing numbers and letters
- * @param  {number} length The length of the string
- * @return {string} The generated string
- */
-var generateRandomString = function (length) {
-  var text = "";
-  var possible =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-  for (var i = 0; i < length; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
-};
-
-var stateKey = "spotify_auth_state";
-
+var express = require("express");
 var app = express();
+const path = require("path");
+var SpotifyWebApi = require("spotify-web-api-node");
+const SpotifyStrategy = require('passport-spotify').Strategy;
 
-app
-  .use(express.static(__dirname + "/public"))
-  .use(cors())
-  .use(cookieParser());
 
-app.get("/login", function (req, res) {
-  var state = generateRandomString(16);
-  res.cookie(stateKey, state);
-
-  // your application requests authorization
-  var scope =
-    "user-read-private user-read-email playlist-modify-public  playlist-read-private playlist-modify-private playlist-read-collaborative";
-  res.redirect(
-    "https://accounts.spotify.com/authorize?" +
-      querystring.stringify({
-        response_type: "code",
-        client_id: client_id,
-        scope: scope,
-        redirect_uri: redirect_uri,
-        state: state,
-      })
-  );
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname + "/main.html"));
 });
+
+app.get("/login", (req, res) => {
+  var scopes = [
+    "user-read-private",
+    "user-read-email",
+    "playlist-modify-public",
+    "playlist-read-private",
+  ];
+  var redirectUrl = "http://localhost:3000/";
+  var client_id = "5127a73ed1d04f14beb7b492421a1f92";
+  var client_secret = "aa4c1eac5f444bf1ac5f4f2e52158d02";
+
+  var spotifyApi = new SpotifyWebApi({
+    redirectUri: redirectUrl,
+    clientId: client_id,
+  });
+
+  var state = "spotify_auth_state";
+  var responseType = "code";
+  var showDialogue = "true";
+  var authorizeURL = spotifyApi.createAuthorizeURL(
+    scopes,
+    state,
+    showDialogue,
+    responseType
+  );
+
+res.redirect(authorizeURL);
+  
+  spotifyApi.setAccessToken('BQBilGnxaXDS2HjMl8y6r6Lwk3dbn1IYcoQ3raCTNjHm8Z2qLqOUSsabpNmqkasYrNXI2EmTVKYWQ3o30sc7oPu9J-FMnuJQ5A8vxHLfJebr2ha6k4dI8uqN4t9ozTMSjRZqGxSvd5gaiSyhnNXsGMkPTRmT6ZGrBIHHgZSXYVQ9m7URYKNLRDUHH-dxkCNnhTjNeuSwG3Z06qi2JSYCHGxjshGAsx_3llJrSXVi1q2PZzXeVbEMPi8eO_5q2LE');
+  //create playlist
+  spotifyApi.createPlaylist('Youtube', { 'description': 'Youtube Liked Songs', 'public': false })
+  .then(function(data) {
+    console.log('Created playlist!');
+    console.log(data.playlistId);
+  }, function(err) {
+    console.log('Something went wrong!', err);
+  });
+
+  //add songs to playlist
+  /*spotifyApi.addTracksToPlaylist('Youtube', ["spotify:track:4iV5W9uYEdYUVa79Axb7Rh", "spotify:track:1301WleyT98MSxVHPZCA6M"])
+  .then(function(data) {
+    console.log('Added tracks to playlist!');
+  }, function(err) {
+    console.log('Something went wrong!', err);
+  });*/
+});
+
+//console.log(location.search);
 
 app.get("/callback", function (req, res) {
-  // your application requests refresh and access tokens
-  // after checking the state parameter
-
-  var code = req.query.code || null;
-  var state = req.query.state || null;
-  var storedState = req.cookies ? req.cookies[stateKey] : null;
-
-  if (state === null || state !== storedState) {
-    res.redirect(
-      "/#" +
-        querystring.stringify({
-          error: "state_mismatch",
-        })
-    );
-  } else {
-    res.clearCookie(stateKey);
-    var authOptions = {
-      url: "https://accounts.spotify.com/api/token",
-      form: {
-        code: code,
-        redirect_uri: redirect_uri,
-        grant_type: "authorization_code",
-      },
-      headers: {
-        Authorization:
-          "Basic " +
-          new Buffer(client_id + ":" + client_secret).toString("base64"),
-      },
-      json: true,
-    };
-
-    /**/
-    request.post(authOptions, function (error, response, body) {
-      if (!error && response.statusCode === 200) {
-        (window.access_token = body.access_token),
-          (window.refresh_token = body.refresh_token);
-
-        var options = {
-          url: "https://api.spotify.com/v1/me",
-          headers: { Authorization: "Bearer " + access_token },
-          json: true,
-        };
-
-        // use the access token to access the Spotify Web API
-        request.get(options, function (error, response, body) {
-          console.log(body.access_token);
-        });
-
-        // we can also pass the token to the browser to make requests from there
-        res.redirect(
-          "/#" +
-            querystring.stringify({
-              access_token: access_token,
-              refresh_token: refresh_token,
-            })
-        );
-      } else {
-        res.redirect(
-          "/#" +
-            querystring.stringify({
-              error: "invalid_token",
-            })
-        );
-      }
-    });
-  }
+    
 });
-
-//Create playlist
-fetch("https://api.spotify.com/v1/users/{user_id}/playlists", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + accesss_token,
-      },
-      json: true,
-      body: {
-        name: "Axios",
-        description: "New playlist description",
-        public: false,
-      },
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        console.log("Success:", data);
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-      });
-
-app.get("/refresh_token", function (req, res) {
-  // requesting access token from refresh token
-  var refresh_token = req.query.refresh_token;
-  var authOptions = {
-    url: "https://accounts.spotify.com/api/token",
-    headers: {
-      Authorization:
-        "Basic " +
-        new Buffer(client_id + ":" + client_secret).toString("base64"),
-    },
-    form: {
-      grant_type: "refresh_token",
-      refresh_token: refresh_token,
-    },
-    json: true,
-  };
-
-  request.post(authOptions, function (error, response, body) {
-    if (!error && response.statusCode === 200) {
-      var access_token = body.access_token;
-      res.send({
-        access_token: access_token,
-      });
-    }
-  });
-});
-
-console.log("Listening on 3000");
+console.log("listening on 3000");
 app.listen(3000);
